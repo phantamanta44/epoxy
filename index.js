@@ -33,7 +33,7 @@ function modFileUrl(mod, version) {
   return modUrl(mod, version + '/' + mod + '-' + version + '.zip');
 }
 
-const modCache = {};
+let modCache = {};
 async function getModMeta(modId) {
   if (modCache.hasOwnProperty(modId))
     return modCache[modId]
@@ -184,23 +184,26 @@ async function buildResponse(slug, build, include) {
 }
 
 // Cache mod meta files
-request(repoUrl('packs/packs.json')).then(async function(packs) {
-  packs = JSON.parse(packs);
-  for (let slug in packs) {
-    if (packs.hasOwnProperty(slug)) {
-      let packMeta = await getPackMeta(slug);
-      for (let key in packMeta.builds.all) {
-        if (packMeta.builds.all.hasOwnProperty(key)) {
-          let mods = packMeta.builds.all[key].mods;
-          for (let i = 0; i < mods.length; i++) {
-            if (!modCache.hasOwnProperty(mods[i].id))
-              modCache[mods[i].id] = await loadModMeta(mods[i].id);
+function cacheModMeta() {
+  request(repoUrl('packs/packs.json')).then(async function (packs) {
+    packs = JSON.parse(packs);
+    for (let slug in packs) {
+      if (packs.hasOwnProperty(slug)) {
+        let packMeta = await getPackMeta(slug);
+        for (let key in packMeta.builds.all) {
+          if (packMeta.builds.all.hasOwnProperty(key)) {
+            let mods = packMeta.builds.all[key].mods;
+            for (let i = 0; i < mods.length; i++) {
+              if (!modCache.hasOwnProperty(mods[i].id))
+                modCache[mods[i].id] = await loadModMeta(mods[i].id);
+            }
           }
         }
       }
     }
-  }
-});
+  });
+}
+cacheModMeta();
 
 // Build api
 const server = rfy.createServer({
@@ -244,6 +247,33 @@ server.get('/api/verify/:key', async function(req, res, next) {
     }
   }
   next();
+});
+
+server.get('/api/internal/:action', async function(req, res, next) {
+  if (!req.query.key || !xyApp.keys[req.query.key.toLowerCase()]) {
+    res.send(401, {
+      error: 'Unauthenticated'
+    });
+  } else if (!req.params.action) {
+    res.send(400, {
+      error: 'No action specified'
+    });
+  } else {
+    switch (req.params.action.toLowerCase()) {
+      case 'flushcache':
+        modCache = {};
+        cacheModMeta();
+        res.send({
+          success: 'Flushed mod meta cache'
+        });
+        break;
+      default:
+        res.send(400, {
+          error: 'Unknown action'
+        });
+        break;
+    }
+  }
 });
 
 server.get('/api/mod/:modname', async function(req, res, next) {
