@@ -166,7 +166,7 @@ async function buildResponse(slug, build, include) {
       let mod = {
         name: build.mods[key].id,
         version: build.mods[key].version,
-        md5: parseModChecksum(build.mods[key]),
+        md5: await parseModChecksum(build.mods[key]),
         url: parseModSource(build.mods[key])
       };
       if (include === 'mods') {
