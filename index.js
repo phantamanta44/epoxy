@@ -1,13 +1,24 @@
 'use strict';
 const rfy = require('restify');
 const request = require('request-promise-native');
+const fs = require('fs');
 
 // Epoxy config
 const xyApp = {
   name: 'epoxy',
   version: '1.0.0',
-  url: 'https://president-george-14344.netlify.com/'
+  url: process.env.XY_URL,
+  keys: {}
 };
+let apiKeys = JSON.parse(process.env.XY_KEYS);
+for (let key in apiKeys) {
+  if (apiKeys.hasOwnProperty(key)) {
+    xyApp.keys[key.toLowerCase()] = {
+      name: apiKeys[key].name,
+      timestamp: new Date(apiKeys[key].timestamp).toISOString()
+    };
+  }
+}
 
 // Utility methods
 function repoUrl(endpoint) {
@@ -37,6 +48,8 @@ async function getPackMeta(slug) {
 async function parseModChecksum(mod) {
   switch (mod.source.toLowerCase()) {
     case 'local':
+      if (!(await getModMeta(mod.id)).versions[mod.version])
+        console.log(mod.id + ' failed');
       return (await getModMeta(mod.id)).versions[mod.version].md5;
     case 'remote':
       return mod.md5;
@@ -87,15 +100,19 @@ function versionResponse(modId, versionId, version) {
   };
 }
 
-async function modpacksResponse() {
+async function modpacksResponse(include) {
   let packs = JSON.parse(await request(repoUrl('packs/packs.json')));
   let res = {
     modpacks: {},
     mirror_url: xyApp.url
   };
   for (let key in packs) {
-    if (packs.hasOwnProperty(key))
-      res.modpacks[key] = packs[key];
+    if (packs.hasOwnProperty(key)) {
+      if (include === 'full')
+        res.modpacks[key] = modpackResponse(key, await getPackMeta(key));
+      else
+        res.modpacks[key] = packs[key];
+    }
   }
   return res;
 }
@@ -122,7 +139,7 @@ function modpackResponse(slug, pack) {
   return res;
 }
 
-function buildResponse(slug, build) {
+async function buildResponse(slug, build, include) {
   let res = {
     minecraft: build.minecraft.version,
     minecraft_md5: build.minecraft.md5,
@@ -131,12 +148,21 @@ function buildResponse(slug, build) {
   };
   for (let key in build.mods) {
     if (build.mods.hasOwnProperty(key)) {
-      res.mods.push({
+      let mod = {
         name: build.mods[key].id,
         version: build.mods[key].version,
         md5: parseModChecksum(build.mods[key]),
         url: parseModSource(build.mods[key])
-      });
+      };
+      if (include === 'mods') {
+        let meta = await getModMeta(mod.name);
+        mod['pretty_name'] = meta.name;
+        mod['author'] = meta.author;
+        mod['description'] = meta.description;
+        mod['link'] = meta.url;
+        mod['donate'] = meta.donate;
+      }
+      res.mods.push(mod);
     }
   }
   return res;
@@ -147,6 +173,8 @@ const server = rfy.createServer({
   name: xyApp.name,
   version: xyApp.version
 });
+
+server.use(rfy.plugins.queryParser());
 
 server.use(function(req, res, next) {
   res.setHeader('content-type', 'application/json');
@@ -159,6 +187,28 @@ server.get('/api', async function(req, res, next) {
     version: xyApp.version,
     stream: 'DEV'
   });
+  next();
+});
+
+server.get('/api/verify/:key', async function(req, res, next) {
+  if (!req.params.key) {
+    res.send(400, {
+      error: 'No API key provided.'
+    });
+  } else {
+    let key = xyApp.keys[req.params.key.toLowerCase()];
+    if (!key) {
+      res.send(404, {
+        error: 'Invalid key provided.'
+      });
+    } else {
+      res.send({
+        valid: 'Key validated.',
+        name: key.name,
+        created_at: key.timestamp
+      });
+    }
+  }
   next();
 });
 
@@ -210,13 +260,13 @@ server.get('/api/mod/:modname/:modversion', async function(req, res, next) {
 });
 
 server.get('/api/modpack', async function(req, res, next) {
-  res.send(await modpacksResponse());
+    res.send(await modpacksResponse(req.query.include || false));
   next();
 });
 
 server.get('/api/modpack/:slug', async function(req, res, next) {
   if (!req.params.slug) {
-    res.send(await modpacksResponse());
+    res.send(await modpacksResponse(req.query.include || false));
   } else {
     let pack = await getPackMeta(req.params.slug);
     if (!pack) {
@@ -232,7 +282,7 @@ server.get('/api/modpack/:slug', async function(req, res, next) {
 
 server.get('/api/modpack/:slug/:build', async function(req, res, next) {
   if (!req.params.slug) {
-    res.send(await modpacksResponse());
+    res.send(await modpacksResponse(req.query.include || false));
   } else {
     let pack = await getPackMeta(req.params.slug);
     if (!pack) {
@@ -249,7 +299,7 @@ server.get('/api/modpack/:slug/:build', async function(req, res, next) {
             error: 'Build does not exist'
           });
         } else {
-          res.send(buildResponse(req.params.slug, build));
+          res.send(await buildResponse(req.params.slug, build, req.query.include || false));
         }
       }
     }
