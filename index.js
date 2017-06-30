@@ -33,8 +33,20 @@ function modFileUrl(mod, version) {
   return modUrl(mod, version + '/' + mod + '-' + version + '.zip');
 }
 
+const modCache = {};
 async function getModMeta(modId) {
-  return JSON.parse(await request(modUrl(modId, 'mod.json')).catch(console.log));
+  if (modCache.hasOwnProperty(modId))
+    return modCache[modId]
+  return modCache[modId] = await loadModMeta(modId);
+}
+
+async function loadModMeta(modId) {
+  let content = await request(modUrl(modId, 'mod.json')).catch(console.log);
+  try {
+    return JSON.parse(content);
+  } catch (e) {
+    return null;
+  }
 }
 
 function packUrl(slug, path) {
@@ -42,14 +54,17 @@ function packUrl(slug, path) {
 }
 
 async function getPackMeta(slug) {
-  return JSON.parse(await request(packUrl(slug, 'pack.json')).catch(console.log));
+  let content = await request(packUrl(slug, 'pack.json')).catch(console.log);
+  try {
+    return JSON.parse(content);
+  } catch (e) {
+    return null;
+  }
 }
 
 async function parseModChecksum(mod) {
   switch (mod.source.toLowerCase()) {
     case 'local':
-      if (!(await getModMeta(mod.id)).versions[mod.version])
-        console.log(mod.id + ' failed');
       return (await getModMeta(mod.id)).versions[mod.version].md5;
     case 'remote':
       return mod.md5;
@@ -167,6 +182,27 @@ async function buildResponse(slug, build, include) {
   }
   return res;
 }
+
+// Cache mod meta files
+request(repoUrl('packs/packs.json')).then(async function(packs) {
+  packs = JSON.parse(packs);
+  for (let slug in packs) {
+    if (packs.hasOwnProperty(slug)) {
+      let packMeta = await getPackMeta(slug);
+      for (let key in packMeta.builds.all) {
+        if (packMeta.builds.all.hasOwnProperty(key)) {
+          let mods = packMeta.builds.all[key].mods;
+          for (let i = 0; i < mods.length; i++) {
+            if (!modCache.hasOwnProperty(mods[i].id)) {
+              console.log('cached ' + mods[i].id);
+              modCache[mods[i].id] = await loadModMeta(mods[i].id);
+            }
+          }
+        }
+      }
+    }
+  }
+});
 
 // Build api
 const server = rfy.createServer({
