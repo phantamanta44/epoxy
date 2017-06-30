@@ -193,10 +193,8 @@ request(repoUrl('packs/packs.json')).then(async function(packs) {
         if (packMeta.builds.all.hasOwnProperty(key)) {
           let mods = packMeta.builds.all[key].mods;
           for (let i = 0; i < mods.length; i++) {
-            if (!modCache.hasOwnProperty(mods[i].id)) {
-              console.log('cached ' + mods[i].id);
+            if (!modCache.hasOwnProperty(mods[i].id))
               modCache[mods[i].id] = await loadModMeta(mods[i].id);
-            }
           }
         }
       }
