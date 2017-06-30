@@ -274,6 +274,7 @@ server.get('/api/internal/:action', async function(req, res, next) {
         break;
     }
   }
+  next();
 });
 
 server.get('/api/mod/:modname', async function(req, res, next) {
