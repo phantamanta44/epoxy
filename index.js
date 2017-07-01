@@ -9,6 +9,8 @@ const xyApp = {
   url: process.env.XY_URL,
   keys: {}
 };
+if (!xyApp.url.endsWith('/'))
+  xyApp.url = xyApp.url + '/';
 let apiKeys = JSON.parse(process.env.XY_KEYS);
 for (let key in apiKeys) {
   if (apiKeys.hasOwnProperty(key)) {
