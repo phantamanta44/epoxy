@@ -1,7 +1,6 @@
 'use strict';
 const rfy = require('restify');
 const request = require('request-promise-native');
-const fs = require('fs');
 
 // Epoxy config
 const xyApp = {
