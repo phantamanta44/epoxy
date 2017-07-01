@@ -7,7 +7,8 @@ const xyApp = {
   name: 'epoxy',
   version: '1.0.0',
   url: process.env.XY_URL,
-  keys: {}
+  keys: {},
+  logging: process.env.XY_LOG === "true"
 };
 if (!xyApp.url.endsWith('/'))
   xyApp.url = xyApp.url + '/';
@@ -22,6 +23,11 @@ for (let key in apiKeys) {
 }
 
 // Utility methods
+function log(text) {
+  if (xyApp.logging)
+    console.log(new Date().toISOString() + " -- " + text);
+}
+
 function repoUrl(endpoint) {
   return xyApp.url + endpoint;
 }
@@ -37,13 +43,14 @@ function modFileUrl(mod, version) {
 let modCache = {};
 async function getModMeta(modId) {
   if (modCache.hasOwnProperty(modId))
-    return modCache[modId]
+    return modCache[modId];
   return modCache[modId] = await loadModMeta(modId);
 }
 
 async function loadModMeta(modId) {
   let content = await request(modUrl(modId, 'mod.json')).catch(console.log);
   try {
+    log('Cached meta for: ' + modId);
     return JSON.parse(content);
   } catch (e) {
     return null;
@@ -215,6 +222,7 @@ const server = rfy.createServer({
 server.use(rfy.plugins.queryParser());
 
 server.use(function(req, res, next) {
+  log('Req: ' + req.httpVersion + ' ' + req.method + ' ' + req.url);
   res.setHeader('content-type', 'application/json');
   return next();
 });
@@ -255,6 +263,7 @@ server.get('/api/internal/:action', async function(req, res, next) {
     res.send(401, {
       error: 'Unauthenticated'
     });
+    log('Unauthenticated request to /internal!');
   } else if (!req.params.action) {
     res.send(400, {
       error: 'No action specified'
@@ -264,6 +273,7 @@ server.get('/api/internal/:action', async function(req, res, next) {
       case 'flushcache':
         modCache = {};
         cacheModMeta();
+        log('Flushed meta cache');
         res.send({
           success: 'Flushed mod meta cache'
         });
@@ -374,4 +384,6 @@ server.get('/api/modpack/:slug/:build', async function(req, res, next) {
 });
 
 // Deploy server
-server.listen(8080);
+server.listen(8080, function() {
+  log('Server started')
+});
